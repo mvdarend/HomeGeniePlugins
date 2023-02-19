@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ProgramBlock xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <ConditionType>OnTrue</ConditionType>
+  <Conditions />
+  <Commands />
+  <ScriptCondition>// Put your trigger code logic here.
+// To execute the Code To Run,
+// use a 'return true' or 'return false' otherwise.
+Program.Setup( () =&gt; {
+    Program.AddVirtualModules("HomeAutomation.Philips.Television", "Generic", "philipstv/philipstv", 1, 1);
+  // set the widget
+  //Program.AddControlWidget("???");
+
+  // set input fields parameters
+  Program.AddInputField("IPAddress", "192.168.*.*", "Television IP address");
+  Program.AddInputField("Port", "1925", "Television Port number");
+});
+
+return true;</ScriptCondition>
+  <ScriptSource>// To find out what is available for your TV go to your television IP address:
+// eg. http://192.168.x.x:1925/
+
+// Commands below tested on a 42PFL6687H (2012 model) 
+// known issue: it is not possible to get TV out of standy, newer models do support this apparently
+
+Func&lt;string, bool&gt; keyInput = (string keyValue) =&gt; 
+{
+  	if (Program.InputField("IPAddress").Value == "" || Program.InputField("IPAddress").Value.EndsWith("*"))
+    {
+      	return false;
+    }
+  
+    // http://ip-address:1925/1/input/key 
+  	string webserviceurl = String.Format("http://{0}:{1}/1/input/key", Program.InputField("IPAddress").Value, Program.InputField("Port").Value);
+  	string thecommand = "{\"key\": \"" + keyValue + "\"}";
+  
+    using (var client = new System.Net.WebClient())
+    {
+        client.UploadString(webserviceurl, "POST", thecommand);
+    }
+  	return true;
+};
+
+Func&lt;string, string, bool&gt; audioVolume = (string key, string keyValue) =&gt; 
+{
+  	if (Program.InputField("IPAddress").Value == "" || Program.InputField("IPAddress").Value.EndsWith("*"))
+    {
+      	return false;
+    }
+  
+    // http://ip-address:1925/1/audio/volume
+  	string webserviceurl = String.Format("http://{0}:{1}/1/audio/volume", Program.InputField("IPAddress").Value, Program.InputField("Port").Value);
+  	string thecommand = "{\"" + key + "\": " + keyValue + "}";
+  
+    using (var client = new System.Net.WebClient())
+    {
+        client.UploadString(webserviceurl, "POST", thecommand);
+    }
+  	return true;
+};
+
+When.WebServiceCallReceived("HomeAutomation.Philips.Television", (args) =&gt;
+{
+    string[] reqs = ((string)args).Split('/');
+    var theResponse = "";
+  
+    try
+    {
+      string command = reqs[2];
+      string commandValue = reqs[3];
+
+        switch(command)
+        {
+		// eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.CustomKey/AmbilightOnOff
+        case "Control.CustomKey":
+	        keyInput(commandValue);
+        	break;
+        // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.ToggleStandby
+        case "Control.ToggleStandby":
+	        keyInput("Standby");
+        	break;
+		// eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.Digit/2
+        case "Control.Digit":
+	        keyInput("Digit" + commandValue);
+        	break;
+         // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.ChannelUp
+         case "Control.ChannelUp":
+	        keyInput("ChannelStepUp");
+        	break;
+          // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.ChannelDown
+          case "Control.ChannelDown":
+	        keyInput("ChannelStepDown");
+        	break;
+         // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.VolumeUp
+         case "Control.VolumeUp":
+	        keyInput("VolumeUp");
+        	break;
+          // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.VolumeDown
+          case "Control.VolumeDown":
+	        keyInput("VolumeDown");
+        	break;
+          // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.ToggleMute
+          case "Control.ToggleMute":
+	        keyInput("Mute");
+        	break;
+          // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.VolumeLevel/25
+          case "Control.VolumeLevel":
+	        audioVolume("current", commandValue);
+        	break;
+          // eg. http://&lt;hg_address&gt;/api/HomeAutomation.Philips.Television/Control.Mute/true
+          case "Control.Mute":
+            // muted true/false
+	        audioVolume("muted", commandValue.ToLower());
+        	break;
+        }
+    } 
+    catch (Exception ex) 
+    { 
+      theResponse = "{ 'ResponseValue' : 'ERROR: " + ex.Message + " " + ex.StackTrace + "' }";
+    }
+
+    return theResponse;
+});
+
+Program.GoBackground();</ScriptSource>
+  <ScriptErrors>[]</ScriptErrors>
+  <IsRunning>true</IsRunning>
+  <Features />
+  <LastConditionEvaluationResult>false</LastConditionEvaluationResult>
+  <Domain>HomeAutomation.HomeGenie.Automation</Domain>
+  <Address>1102</Address>
+  <Name>Philips TV</Name>
+  <Description>Philips TV remote
+</Description>
+  <Group>Test stuff</Group>
+  <ActivationTime>2014-12-12T18:27:22.3415639Z</ActivationTime>
+  <TriggerTime>2014-12-12T18:27:22.4627265Z</TriggerTime>
+  <Type>CSharp</Type>
+  <IsEnabled>true</IsEnabled>
+</ProgramBlock>

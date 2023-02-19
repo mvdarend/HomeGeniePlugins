@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ProgramBlock xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <ConditionType>OnTrue</ConditionType>
+  <Conditions />
+  <Commands />
+  <ScriptCondition>Program.Setup( () =&gt; {
+  
+    Program.AddVirtualModules("HomeAutomation.Network.Pushalot", "Switch", "homegenie/generic/program", 1, 1);
+
+	Program.AddFeature("Switch,Dimmer,Light,Siren,Sensor,Program,DoorWindow", "Pushalot.NotifyEvents", "Pushalot notifications on change");
+  
+  	Program.AddInputField("AuthorizationToken", "", "Authorization token");
+});
+// this program will be running in background
+return true;
+</ScriptCondition>
+  <ScriptSource>
+Func&lt;string, bool&gt; SendMessage = (string theMessage) =&gt; 
+{
+  	if (Program.InputField("AuthorizationToken").Value == "")
+    {
+      	return false;
+    }
+  
+    theMessage = System.Net.WebUtility.UrlDecode(theMessage);
+  
+	using (var client = new System.Net.WebClient()) 
+    {
+		var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new {
+		AuthorizationToken = Program.InputField("AuthorizationToken").Value,
+		Body = theMessage,
+	});
+
+	client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+	client.UploadString("https://pushalot.com/api/sendmessage", payload);
+	}
+  	return true;
+};
+
+When.WebServiceCallReceived("HomeAutomation.Network.Pushalot", ( args ) =&gt; 
+{
+  string[] reqs = ((string)args).Split('/');
+  string command = reqs[2];
+  string theMessage = reqs[3];
+
+  try
+  {
+    switch(command)
+    {
+      case "Send":
+      SendMessage(theMessage);
+      break;
+    }
+    return "{ 'ResponseValue' : 'OK' }";  
+  } 
+  catch (Exception e) { 
+    Program.Notify("ERROR!", e.Message);
+  }
+  return "{ 'ResponseValue' : 'ERROR' }";
+});
+
+// We want to do further processing whenever a module changes 
+When.ModuleParameterChanged( (module, property) =&gt; {  
+  	if (module.HasFeature("Pushalot.NotifyEvents") &amp;&amp; (property.Name.StartsWith("Sensor.") || property.Name.StartsWith("Status.")))
+	{
+        string theMessage = String.Format("Module: {0}{3} Parameter: {1}{3} Value: {2}{3}", module.Instance.Name, property.Name, property.Value, Environment.NewLine);
+        SendMessage(theMessage);
+    }
+  	// returning true, will route event to other listeners
+    return true; 
+});
+
+Program.GoBackground();</ScriptSource>
+  <ScriptErrors>[]</ScriptErrors>
+  <IsRunning>true</IsRunning>
+  <Features>
+    <ProgramFeature>
+      <FieldType>checkbox</FieldType>
+      <ForDomains />
+      <ForTypes>Switch,Dimmer,Light,Siren,Sensor,Program,DoorWindow</ForTypes>
+      <Property>Pushalot.NotifyEvents</Property>
+      <Description>Pushalot notifications on change</Description>
+    </ProgramFeature>
+  </Features>
+  <LastConditionEvaluationResult>true</LastConditionEvaluationResult>
+  <Domain>HomeAutomation.HomeGenie.Automation</Domain>
+  <Address>1107</Address>
+  <Name>Pushalot</Name>
+  <Description>https://pushalot.com/</Description>
+  <Group>Messaging and Social</Group>
+  <ActivationTime>2015-01-07T18:02:22.894041Z</ActivationTime>
+  <TriggerTime>2015-01-07T18:02:23.022672Z</TriggerTime>
+  <Type>CSharp</Type>
+  <IsEnabled>true</IsEnabled>
+</ProgramBlock>

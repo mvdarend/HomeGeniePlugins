@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ProgramBlock xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <ConditionType>OnTrue</ConditionType>
+  <Conditions />
+  <Commands />
+  <ScriptCondition>// Put your trigger code logic here.
+// To execute the Code To Run,
+// use a 'return true' or 'return false' otherwise.
+Program.Setup( () =&gt; {
+  // set the widget
+  Program.UseWidget("Arend/buienradar/buienradar");
+
+  // set input fields parameters
+  Program.AddOption("Latitude", "52", "Latitude", "text");
+  Program.AddOption("Longitude", "5.66", "Longitude", "text");
+  Program.AddOption("UpdateInterval", "5", "Update interval in minutes. Default is 5 minutes.", "text");
+  // For FR change 0.5 by 0,5
+  Program.AddOption("RainThreshold", "0.5", "Rain threshold in millimeters (or fraction thereof).", "text");
+  
+});
+
+return true;
+</ScriptCondition>
+  <ScriptSource>// CSharp Automation Program Plugin
+
+Func&lt;string, double&gt; ConvertToMMPerHour = (string value) =&gt; 
+{
+  // mm/per hour = 10^((value -109)/32) 
+  // e.g. 77 = 0.1 mm/uur
+  double tempValue = Convert.ToDouble(value);
+  tempValue = (tempValue - 109) / 32;
+  tempValue = Math.Pow(10, tempValue);
+  tempValue = Math.Round(tempValue, 2);
+  return tempValue;
+};
+
+Func&lt;string, DateTime&gt; GetDateTime = (string value) =&gt; 
+{
+  string[] HourMinute = value.Split(':');
+  int hour = Convert.ToInt32(HourMinute[0]);
+  int minute = Convert.ToInt32(HourMinute[1]);
+  DateTime now = DateTime.Now;
+  DateTime dt = new DateTime(now.Year, now.Month, now.Day, hour, minute, 0);
+
+  // Check to see if day has changed
+  TimeSpan duration = dt - now;
+  // If time difference in minutes &gt; 200 then the day has changed
+  if (Math.Abs(duration.Minutes) &gt; 200)
+  {
+    if (now.Hour &gt; 21)
+    {
+      dt = dt.AddDays(1);
+    }
+    else
+    {
+      dt = dt.AddDays(-1);
+    }
+  }
+  return dt;
+};
+
+while (Program.IsEnabled)
+{
+  double mmPerHour;
+  int LoopNumber = 0;
+  int RainExpected = 0;
+  int RainThresholdExpected = 0;
+  double MaxRainExpected = 0;
+  string RawDataForWidget = String.Empty;
+
+  string Latitude = Program.Option("Latitude").Value;  
+  string Longitude = Program.Option("Longitude").Value;
+  double RainThreshold = Convert.ToDouble(Program.Option("RainThreshold").Value) ;
+
+  string webserviceurl = "http://gps.buienradar.nl/getrr.php?lat=" + Latitude + "&amp;lon=" + Longitude;
+
+  string rainData = String.Empty;
+
+  try
+  {
+    rainData = Net.WebService(webserviceurl).GetData().Trim();
+  }
+  catch (Exception e) 
+  {
+    Program.Notify("Buienradar", "Update of data failed.");
+    //DEBUG: Program.Notify("Buienradar ERROR!", e.Message);
+    rainData = String.Empty;
+  }
+
+
+  // Result should look something like this
+  // 000|08:40 000|08:45 000|08:50 000|08:55 000|09:00
+  if (String.IsNullOrEmpty(rainData))
+  {
+    Program.Notify("Buienradar", "Update of data failed, no data.");
+  }
+  else
+  {
+    try
+    {
+      using (System.IO.StringReader reader = new System.IO.StringReader(rainData))
+      {
+        string s;
+        while ((s = reader.ReadLine()) != null)
+        {
+          if (String.IsNullOrEmpty(s)){break;}
+          // split again at the pipe
+          string[] dataPoint = s.Split('|');
+          // Rainfall Value
+          mmPerHour = ConvertToMMPerHour(dataPoint[0]);
+
+          DateTime dt = GetDateTime(dataPoint[1]);
+          if(LoopNumber == 0)
+          {
+              int minuteCou = dt.Minute ;
+              int minuteBase = (minuteCou/30)*30 ;
+              while( minuteBase != minuteCou )
+              {
+                  RawDataForWidget += String.Format("0|{0:00}:{1:00};", dt.Hour, minuteBase );
+                  minuteBase += 5 ;
+              }
+          }
+          if(mmPerHour &gt; RainThreshold &amp;&amp; RainThresholdExpected == 0)
+          {
+            // Rain expected
+            TimeSpan difference = dt - DateTime.Now;
+
+            if (difference.Minutes &gt; 0)
+            {
+              RainThresholdExpected = difference.Minutes;
+            }
+          }
+
+          if(mmPerHour &gt; 0 &amp;&amp; RainExpected == 0)
+          {
+            // Rain expected
+            TimeSpan difference = dt - DateTime.Now;
+
+            if (difference.Minutes &gt; 0)
+            {
+              RainExpected = difference.Minutes;
+            }
+          }
+
+          if(mmPerHour &gt; MaxRainExpected)
+          {
+            // Rain expected
+            TimeSpan difference = dt - DateTime.Now;
+
+            if (difference.Minutes &gt; 0)
+            {
+              MaxRainExpected = mmPerHour;
+            }
+          }
+          // RawDataForWidget is a slightly modified version of the original data
+          RawDataForWidget += String.Format("{0}|{1};", mmPerHour, dataPoint[1]);
+          LoopNumber += 1;
+        }
+      }
+
+      Program.Parameter("Buienradar.RawData").Value = RawDataForWidget.Substring(0, RawDataForWidget.Length - 1); 
+      Program.Parameter("Buienradar.RainExpected").Value = RainExpected.ToString();  
+      Program.Parameter("Buienradar.RainThresholdExpected").Value = RainThresholdExpected.ToString();  
+      Program.Parameter("Buienradar.MaxRainExpected").Value = MaxRainExpected.ToString();  
+
+      Program.RaiseEvent("Buienradar.RainExpected", RainExpected.ToString(), "Buienradar");
+      Program.RaiseEvent("Buienradar.RainThresholdExpected", RainThresholdExpected.ToString(), "Buienradar");
+      Program.RaiseEvent("Buienradar.MaxRainExpected", MaxRainExpected.ToString(), "Buienradar");
+    }
+    catch (Exception e)
+    {
+      Program.Notify("Buienradar", "Parsing of data failed, no data.");
+    }
+  }
+  Pause(Program.Option("UpdateInterval").DecimalValue * 60); // pause before next check
+}
+
+
+</ScriptSource>
+  <ScriptErrors>[]</ScriptErrors>
+  <Domain>HomeAutomation.HomeGenie.Automation</Domain>
+  <Address>1015</Address>
+  <Name>Buienradar</Name>
+  <Description>Retrieves rain information from http://gps.buienradar.nl/ (for NL, BE and FR)</Description>
+  <Group>Weather and Enviroment</Group>
+  <Features />
+  <ActivationTime>2015-07-30T09:13:44.964683Z</ActivationTime>
+  <TriggerTime>2015-07-30T09:13:45.195233Z</TriggerTime>
+  <Type>CSharp</Type>
+  <IsEnabled>true</IsEnabled>
+</ProgramBlock>

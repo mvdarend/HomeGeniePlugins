@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ProgramBlock xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <ConditionType>OnTrue</ConditionType>
+  <Conditions />
+  <Commands />
+  <ScriptCondition>
+Program.Setup(()=&gt;{
+  Program.UseWidget("homegenie/generic/smartmeter");
+
+  // setup program parameters
+  Program.Parameter("Meter.Total").Value = "";
+  Program.Parameter("Meter.Watts").Value = "";
+
+  Program.AddOption("PortName", "/dev/ttyUSB0", "COM port", "text");
+  Program.AddOption("BaudRate", "115200", "Baud rate", "text");
+  
+  Program.AddOption("ShowTotalGas", "true", "Display Gas", "text");
+  Program.AddOption("ShowTotalPeak", "true", "Display Peak", "text");
+  Program.AddOption("ShowTotalOffPeak", "true", "Display Off Peak", "text");
+  
+  Program.AddOption("ShowState", "true", "Display Peak / Off peak mode", "text");
+  
+  Program.AddOption("ShowTotalPeakPV", "false", "Display PV output Peak", "text");
+  Program.AddOption("ShowTotalOffPeakPV", "false", "Display PV output Off peak", "text");
+});
+//
+return true;
+</ScriptCondition>
+  <ScriptSource>// CSharp Automation Program Plugin
+// Example for using Helper Classes:
+// Modules.WithName("Light 1").On();
+
+string portname = Program.Option("PortName").Value.Trim();
+int baudrate = 115200; int.TryParse(Program.Option("BaudRate").Value, out baudrate);
+
+bool ShowTotalGas = true; bool.TryParse(Program.Option("ShowTotalGas").Value, out ShowTotalGas);
+bool ShowTotalPeak = true; bool.TryParse(Program.Option("ShowTotalPeak").Value, out ShowTotalPeak);
+bool ShowTotalOffPeak = true; bool.TryParse(Program.Option("ShowTotalOffPeak").Value, out ShowTotalOffPeak);
+bool ShowState = true; bool.TryParse(Program.Option("ShowState").Value, out ShowState);
+bool ShowTotalPeakPV = false; bool.TryParse(Program.Option("ShowTotalPeakPV").Value, out ShowTotalPeakPV);
+bool ShowTotalOffPeakPV = false; bool.TryParse(Program.Option("ShowTotalOffPeakPV").Value, out ShowTotalOffPeakPV);
+
+Action&lt;string&gt; 
+  HandleStringReceived = (string message) =&gt; {
+
+  if (ShowTotalGas == false)
+  {
+    Program.Parameter("Meter.TotalGas").Value = String.Empty;
+  }
+  if (ShowTotalPeak == false)
+  {
+    Program.Parameter("Meter.TotalPeak").Value = String.Empty;
+  }
+  if (ShowTotalOffPeak == false)
+  {
+    Program.Parameter("Meter.TotalOffPeak").Value = String.Empty;
+  }
+  if (ShowState == false)
+  {
+    Program.Parameter("Meter.State").Value = String.Empty;
+  }
+  if (ShowTotalPeakPV == false)
+  {
+    Program.Parameter("Meter.TotalPeakPV").Value = String.Empty;
+  }
+  if (ShowTotalOffPeakPV == false)
+  {
+    Program.Parameter("Meter.TotalOffPeakPV").Value = String.Empty;
+  }
+
+  // this will be called every time a message is received from serial port
+  //Program.Notify("SerialPort String", message);
+
+  using (System.IO.StringReader reader = new System.IO.StringReader(message))
+  {
+    string s;
+    string tempVal;
+
+    while ((s = reader.ReadLine()) != null)
+    {    
+      if (s.StartsWith("1-0:1.7.0"))
+      {
+        // Current usage
+        tempVal = s.Replace("1-0:1.7.0(", String.Empty);
+        tempVal = tempVal.Replace("*kW)", String.Empty);
+        tempVal = tempVal.Replace(".", String.Empty);
+
+        int usage = Convert.ToInt32(tempVal);
+        //Program.Notify("Current usage", usage.ToString() + " watts");
+        Program.Parameter("Meter.Watts").Value = usage.ToString();
+        Program.Notify("Smart meter", usage.ToString() + " Watts");
+      }
+      else if (s.StartsWith("1-0:1.8.1") &amp;&amp; ShowTotalOffPeak == true)
+      {
+        // Total Off - peak
+        tempVal = s.Replace("1-0:1.8.1(", String.Empty);
+        tempVal = tempVal.Replace("*kWh)", String.Empty);
+        tempVal = tempVal.Replace(".", String.Empty);
+
+        double TotalOffPeak = Convert.ToDouble(tempVal) / 1000;
+        //Program.Notify("Total Off - peak", TotalOffPeak.ToString() + " kWh");
+        Program.Parameter("Meter.TotalOffPeak").Value = TotalOffPeak.ToString("F3");
+        Program.Notify("Smart meter", TotalOffPeak.ToString("F3"));
+      }
+      else if (s.StartsWith("1-0:1.8.2") &amp;&amp; ShowTotalPeak == true)
+      {
+        // Total peak
+        tempVal = s.Replace("1-0:1.8.2(", String.Empty);
+        tempVal = tempVal.Replace("*kWh)", String.Empty);
+        tempVal = tempVal.Replace(".", String.Empty);
+
+        double TotalPeak = Convert.ToDouble(tempVal) / 1000;
+        //Program.Notify("Total Peak", TotalPeak.ToString() + " kWh");
+        Program.Parameter("Meter.TotalPeak").Value = String.Format("{0:f3}", TotalPeak);
+        Program.Notify("Smart meter", String.Format("{0:f3}", TotalPeak));
+      }
+      else if (s.StartsWith("0-1:24.2.1") &amp;&amp; ShowTotalGas == true)
+      {
+        //Total Gas
+        tempVal = s.Replace("0-1:24.2.1(", String.Empty);
+        tempVal = tempVal.Replace("*m3)", String.Empty);
+        tempVal = tempVal.Replace(".", String.Empty);
+
+        int tempIndex = tempVal.IndexOf(")(");
+
+        tempVal = tempVal.Substring(tempIndex + 2);
+
+        double TotalGas = Convert.ToDouble(tempVal) / 1000;
+
+        Program.Parameter("Meter.TotalGas").Value = TotalGas.ToString("F3");
+        Program.Notify("Smart meter", TotalGas.ToString("F3"));
+      }
+      else if (s.StartsWith("0-0:96.14.0") &amp;&amp; ShowState == true)
+      {
+        // Peak / Off peak status (1 = Off Peak, 2 = Peak)
+        string MeterState = "Off peak";
+        if (s.EndsWith("2)"))
+        {
+          MeterState = "Peak";
+        }
+        Program.Parameter("Meter.State").Value = MeterState;
+        Program.Notify("Smart meter", MeterState);
+      }
+      else if (s.StartsWith("1-0:2.8.1") &amp;&amp; ShowTotalPeakPV == true)
+      {
+        // Total Off peak PV (returning energy from Solar panels)
+        tempVal = s.Replace("1-0:2.8.1(", String.Empty);
+        tempVal = tempVal.Replace("*kWh)", String.Empty);
+        tempVal = tempVal.Replace(".", String.Empty);
+
+        double TotalOffPeakPV = Convert.ToDouble(tempVal) / 1000;
+        //Program.Notify("Total Peak PV", TotalPeakPV.ToString() + " kWh");
+        Program.Parameter("Meter.TotalOffPeakPV").Value = String.Format("{0:f3}", TotalOffPeakPV);
+        Program.Notify("Smart meter", String.Format("{0:f3}", TotalOffPeakPV));
+      }
+      else if (s.StartsWith("1-0:2.8.2") &amp;&amp; ShowTotalPeakPV == true)
+      {
+        // Total peak PV (returning energy from Solar panels)
+        tempVal = s.Replace("1-0:2.8.2(", String.Empty);
+        tempVal = tempVal.Replace("*kWh)", String.Empty);
+        tempVal = tempVal.Replace(".", String.Empty);
+
+        double TotalPeakPV = Convert.ToDouble(tempVal) / 1000;
+        //Program.Notify("Total Peak PV", TotalPeakPV.ToString() + " kWh");
+        Program.Parameter("Meter.TotalPeakPV").Value = String.Format("{0:f3}", TotalPeakPV);
+        Program.Notify("Smart meter", String.Format("{0:f3}", TotalPeakPV));
+      }
+    }
+  }
+
+
+
+
+
+};
+
+Action&lt;bool&gt;
+  HandleStatusChanged = (bool connected) =&gt; {
+
+  // this will be called every time the connection status changes
+  Program.Notify("Smartmeter port Status", connected ? "CONNECTED!" : "DISCONNECTED!");
+
+};
+
+// open the serial port channel and register handlers
+SerialPort
+  .WithName( portname )
+  .OnStatusChanged( HandleStatusChanged )
+  //.OnMessageReceived( HandleMessageReceived )
+  .OnStringReceived( HandleStringReceived )
+  .Connect( baudrate ); // change baud rate if needed
+
+
+
+
+Program.GoBackground();
+</ScriptSource>
+  <ScriptErrors>[]</ScriptErrors>
+  <Domain>HomeAutomation.HomeGenie.Automation</Domain>
+  <Address>1115</Address>
+  <Name>Smart meter</Name>
+  <Description />
+  <Group>Energy Management</Group>
+  <Features />
+  <ActivationTime>2015-08-06T18:52:06.522585Z</ActivationTime>
+  <TriggerTime>2015-08-06T18:52:07.883749Z</TriggerTime>
+  <Type>CSharp</Type>
+  <IsEnabled>true</IsEnabled>
+</ProgramBlock>

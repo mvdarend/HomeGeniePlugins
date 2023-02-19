@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ProgramBlock xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <ConditionType>OnTrue</ConditionType>
+  <Conditions />
+  <Commands />
+  <ScriptCondition>Program.Setup( () =&gt; {
+  
+    Program.AddVirtualModules("HomeAutomation.Network.Pushbullet", "Switch", "homegenie/generic/program", 1, 1);
+
+	Program.AddFeature("Switch,Dimmer,Light,Siren,Sensor,Program,DoorWindow", "Pushbullet.NotifyEvents", "Pushbullet notifications on change");
+  
+  	Program.AddInputField("AuthorizationToken", "", "Authorization token");
+});
+// this program will be running in background
+return true;
+</ScriptCondition>
+  <ScriptSource>Func&lt;string, string, bool&gt; SendMessage = (string theTitle, string theMessage) =&gt; 
+{
+  if (Program.InputField("AuthorizationToken").Value == "")
+  {
+    return false;
+  }
+
+  theMessage = System.Net.WebUtility.UrlDecode(theMessage);
+  var authToken = Program.InputField("AuthorizationToken").Value;
+
+  ServicePointManager.ServerCertificateValidationCallback += (sender, certificate, chain, sslPolicyErrors) =&gt; true;
+
+  using (var client = new System.Net.WebClient()) 
+  {
+    var payload = Newtonsoft.Json.JsonConvert.SerializeObject(new {
+      AuthorizationToken = authToken,
+      body = theMessage,
+      title = theTitle,
+      type = "note"
+    });
+
+    var authEncoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(authToken + ":"));
+    client.Headers[HttpRequestHeader.Authorization] = string.Format("Basic {0}", authEncoded);
+    client.Headers[HttpRequestHeader.ContentType] = "application/x-www-form-urlencoded";
+    client.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+    client.UploadString("https://api.pushbullet.com/v2/pushes", payload);
+  }
+
+  return true;
+};
+
+When.WebServiceCallReceived("HomeAutomation.Network.Pushbullet", ( args ) =&gt; 
+                            {
+                              string[] reqs = ((string)args).Split('/');
+                              string command = reqs[2];
+                              string theMessage = reqs[3];
+                              string theTitle = ""; if (reqs.Length &gt; 3) theTitle = Uri.UnescapeDataString(reqs[3]);
+                              try
+                              {
+                                switch(command)
+                                {
+                                  case "Send":
+                                  SendMessage(theTitle, theMessage);
+                                  break;
+                                }
+                                return "{ 'ResponseValue' : 'OK' }";  
+                              } 
+                              catch (Exception e) { 
+                                Program.Notify("ERROR!", e.Message);
+                              }
+                              return "{ 'ResponseValue' : 'ERROR' }";
+                            });
+
+// We want to do further processing whenever a module changes 
+When.ModuleParameterChanged( (module, property) =&gt; {  
+  if (module.HasFeature("Pushbullet.NotifyEvents") &amp;&amp; (property.Name.StartsWith("Sensor.") || property.Name.StartsWith("Status.")))
+  {
+    string theMessage = String.Format("Module: {0}{3} Parameter: {1}{3} Value: {2}{3}", module.Instance.Name, property.Name, property.Value, Environment.NewLine);
+    SendMessage(module.Instance.Name, theMessage);
+  }
+  // returning true, will route event to other listeners
+  return true; 
+});
+
+Program.GoBackground();</ScriptSource>
+  <ScriptErrors>[]</ScriptErrors>
+  <Domain>HomeAutomation.HomeGenie.Automation</Domain>
+  <Address>1109</Address>
+  <Name>Pushbullet</Name>
+  <Description>https://docs.pushbullet.com/</Description>
+  <Group>Messaging and Social</Group>
+  <Features>
+    <ProgramFeature>
+      <FieldType>checkbox</FieldType>
+      <ForDomains />
+      <ForTypes>Switch,Dimmer,Light,Siren,Sensor,Program,DoorWindow</ForTypes>
+      <Property>Pushbullet.NotifyEvents</Property>
+      <Description>Pushbullet notifications on change</Description>
+    </ProgramFeature>
+  </Features>
+  <ActivationTime>2015-06-02T18:34:46.336872Z</ActivationTime>
+  <TriggerTime>2015-06-02T18:34:46.861227Z</TriggerTime>
+  <Type>CSharp</Type>
+  <IsEnabled>true</IsEnabled>
+</ProgramBlock>

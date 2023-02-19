@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ProgramBlock xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <ConditionType>OnTrue</ConditionType>
+  <Conditions />
+  <Commands />
+  <ScriptCondition>// Put your trigger code logic here.
+// To execute the Code To Run,
+// use a 'return true' or 'return false' otherwise.
+Program.Setup( () =&gt; {
+  
+  Program.AddVirtualModules("HomeAutomation.Network.WOL", "Switch", "homegenie/generic/program", 1, 1);
+  	//Program.AddControlWidget("homegenie/generic/program");
+  
+  Program.AddInputField("BroadcastAddress", "192.168.0.255", "Network broadcast address");
+  
+});
+// this program will be running in background
+return true;
+</ScriptCondition>
+  <ScriptSource>// CSharp Automation Program Plugin
+// Example for using Helper Classes:
+// Modules.WithName("Light 1").On();
+
+When.WebServiceCallReceived("HomeAutomation.Network.WOL", (args) =&gt; 
+{
+    string[] reqs = ((string)args).Split('/');
+    var res = "";
+  
+    try
+    {
+      string command = reqs[2];
+      string MACAddress = reqs[3];
+
+        switch(command)
+        {
+          case "Send":
+            // Remove '-'
+            if (MACAddress.Contains("-")) { MACAddress = MACAddress.Replace("-", String.Empty); }
+            // Remove ':'
+            if (MACAddress.Contains(":")) { MACAddress = MACAddress.Replace(":", String.Empty); }
+
+            // Build Magic packet as string, begin with 6 times 0xFF and then 16 times the MAC address
+            string MagicPacket = 
+              String.Format("FFFFFFFFFFFF{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}", MACAddress);
+
+            // Create a byte array from the magic packet string
+            byte[] packet = System.Runtime.Remoting.Metadata.W3cXsd2001.SoapHexBinary.Parse(MagicPacket).Value;
+
+            // Prepare UdpClient
+            using (System.Net.Sockets.UdpClient client = new System.Net.Sockets.UdpClient())
+            {
+              client.Connect(Program.InputField("BroadcastAddress").Value, 4343);
+              // Send the Magic packet.
+              client.Send(packet, packet.Length);
+            }
+			res = "{ 'ResponseValue' : 'Magic packet sent' }";
+            break;
+        }
+
+    } 
+    catch (Exception ex) 
+    { 
+      res = "{ 'ResponseValue' : 'ERROR: " + ex.Message + " " + ex.StackTrace + "' }";
+    }
+    // unable to process request
+    return res;
+});
+
+Program.GoBackground();</ScriptSource>
+  <ScriptErrors>[]</ScriptErrors>
+  <IsRunning>true</IsRunning>
+  <Features />
+  <LastConditionEvaluationResult>true</LastConditionEvaluationResult>
+  <Domain>HomeAutomation.HomeGenie.Automation</Domain>
+  <Address>1105</Address>
+  <Name>Wake on LAN</Name>
+  <Description />
+  <Group>Test stuff</Group>
+  <ActivationTime>2014-12-20T08:23:40.0747672Z</ActivationTime>
+  <TriggerTime>2014-12-20T08:23:40.2153925Z</TriggerTime>
+  <Type>CSharp</Type>
+  <IsEnabled>true</IsEnabled>
+</ProgramBlock>

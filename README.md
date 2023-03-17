@@ -1,5 +1,5 @@
 # HomeGeniePlugins
-Plugins for the now abandoned HomeGenie project
+Old Plugins for the HomeGenie domotica/home automation project
 
 ### MySensors_v2_Gateway.hgx
 
